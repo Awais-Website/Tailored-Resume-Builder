@@ -288,6 +288,8 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
         # ── Plain paragraph ───────────────────────────────────────────────────
         else:
+            if stripped:
+                _bullet_count = 0  # any new content block resets the per-entry bullet limit
             p = doc.add_paragraph()
             _set_para_spacing(p, before=0, after=16)
             _add_run_with_inline(p, stripped)
