@@ -324,16 +324,21 @@ Do NOT rely on semantic similarity. If the keyword list says "data visualization
 
 ## Bullet Point Rules (STRICT — zero tolerance)
 - Maximum 4 bullets per job/experience
-- Maximum 32 words per bullet — this is a hard limit, never exceed it
+- Maximum 32 words per bullet — generate short and punchy from the start, never exceed this
 - Every bullet starts with a strong action verb from the JD's vocabulary
 - ZERO em dashes (—) or en dashes (–) in bullets — rephrase instead
 - ZERO semicolons (;) in bullets — use a comma or split into a new clause
+
+## Page & Projects Rules
+- The entire resume must fit on ONE page — be ruthless about brevity
+- For the Projects section: use ONLY the top 3 projects ranked in the keyword extraction step — ignore all others
+- Show the relevance score next to each project heading (e.g. "Project Name — 87% match")
 
 Always respond in structured Markdown."""
 
 
 # ── CALL 1: Extract & bucket JD keywords ────────────────────────────────────
-def stream_extract_keywords(client, job_description: str):
+def stream_extract_keywords(client, job_description: str, resumes_text: str = ""):
     system = """You are a precise keyword extraction specialist for ATS-optimised resumes.
 
 Extract every meaningful keyword from the job description and group into exactly these 6 buckets:
@@ -359,13 +364,25 @@ Output format (Markdown, exactly as shown):
 **Business Terms:** term1, term2 ⭐
 **Functional Skills:** skill1 ⭐, skill2
 **Industry Terms:** term1, term2
-**Preferred Keywords:** phrase1 ⭐, phrase2"""
+**Preferred Keywords:** phrase1 ⭐, phrase2
+
+## Project Relevance Ranking
+
+Rank ALL projects found in the candidate's resume by relevance to this JD. Score each out of 100.
+
+| Rank | Project Name | Relevance Score | Why |
+|------|-------------|-----------------|-----|
+| 1 | Project A | 92/100 | Directly uses X and Y from JD |
+| 2 | Project B | 74/100 | Covers Z competency |
+| 3 | Project C | 61/100 | Partial match on ... |
+
+Only the top 3 will be included in the resume."""
 
     with client.messages.stream(
         model="claude-sonnet-4-6",
-        max_tokens=800,
+        max_tokens=1200,
         system=system,
-        messages=[{"role": "user", "content": f"Extract all keywords from this job description:\n\n{job_description}"}],
+        messages=[{"role": "user", "content": f"Job Description:\n{job_description}\n\nCandidate Resume Library (for project ranking):\n{resumes_text}"}],
     ) as stream:
         for text in stream.text_stream:
             yield text
@@ -374,9 +391,9 @@ Output format (Markdown, exactly as shown):
 # ── CALL 2: Generate resume anchored to keyword list ────────────────────────
 def stream_tailored_resume(client, system_prompt: str, job_description: str,
                             keyword_list: str, extra_context: str):
-    user_message = f"""Build a tailored resume using the candidate's experience library and the pre-extracted keyword list below.
+    user_message = f"""Build a tailored resume using the candidate's experience library, the pre-extracted keyword list, and the project relevance rankings below.
 
-## Pre-Extracted Keyword List (MANDATORY — use exact phrases)
+## Pre-Extracted Keyword List + Project Rankings (MANDATORY)
 {keyword_list}
 
 ## Job Description
@@ -386,6 +403,12 @@ def stream_tailored_resume(client, system_prompt: str, job_description: str,
         user_message += f"\n## Additional Candidate Context\n{extra_context}\n"
 
     user_message += """
+Rules:
+- Use ONLY the top 3 ranked projects from the Project Relevance Ranking table — ignore all others
+- Show the relevance score next to each project heading e.g. "Project Name — 87/100"
+- Keep every bullet under 32 words — punchy and tight from the start
+- Entire resume must fit ONE page
+
 Produce:
 1. The full tailored resume in Markdown
 2. A gap report listing any unaddressed JD requirements with mitigation tips"""
@@ -732,7 +755,7 @@ elif st.session_state.phase == "tailoring":
             placeholder1 = st.empty()
             kw_text = ""
             with st.spinner("Analysing job description..."):
-                for chunk in stream_extract_keywords(client, st.session_state.job_description):
+                for chunk in stream_extract_keywords(client, st.session_state.job_description, st.session_state.system_prompt):
                     kw_text += chunk
                     placeholder1.markdown(kw_text)
             st.session_state.keyword_list = kw_text
