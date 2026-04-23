@@ -157,13 +157,17 @@ for key, default in {
         st.session_state[key] = default
 
 
-# ── Sidebar — API key & resume upload ────────────────────────────────────────
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    api_key = st.text_input("Anthropic API Key", type="password", placeholder="sk-ant-...")
-    st.caption("Your key is never stored — it lives only in this session.")
+# ── Resolve API key (secrets → sidebar fallback) ─────────────────────────────
+api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
 
-    st.divider()
+# ── Sidebar — resume upload (+ key fallback if no secret set) ────────────────
+with st.sidebar:
+    if not api_key:
+        st.header("⚙️ Configuration")
+        api_key = st.text_input("Anthropic API Key", type="password", placeholder="sk-ant-...")
+        st.caption("Your key is never stored — it lives only in this session.")
+        st.divider()
+
     st.header("📂 Resume Library")
     uploaded_files = st.file_uploader(
         "Upload your existing resumes (.txt or .md)",
@@ -214,9 +218,9 @@ if st.session_state.phase == "input":
     ready = api_key and resumes_text and job_description.strip()
     if not ready:
         missing = []
-        if not api_key:       missing.append("Anthropic API Key")
-        if not resumes_text:  missing.append("at least one resume")
-        if not job_description.strip(): missing.append("job description")
+        if not resumes_text:  missing.append("at least one resume (upload in the sidebar)")
+        if not job_description.strip(): missing.append("a job description")
+        if not api_key:       missing.append("an API Key (sidebar)")
         st.warning(f"Please provide: {', '.join(missing)}")
 
     if st.button("🚀 Tailor My Resume", disabled=not ready, use_container_width=True, type="primary"):
