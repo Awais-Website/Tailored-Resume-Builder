@@ -410,24 +410,38 @@ Remember: use their tools, their words, their metrics. Make every answer feel li
 
 
 def stream_humanized_resume(client, resume_md: str, job_description: str):
-    system = """You are a professional resume editor who specialises in making resumes sound natural, confident, and human — while keeping every keyword and skill intact.
+    system = """You are a professional resume editor with two goals: make the resume sound natural and human, AND make sure every bullet actively uses the language, keywords, and terminology from the job description.
 
-Rules:
-1. PRESERVE every keyword, tool, technology, metric, and skill from the original
-2. REMOVE all em dashes (—) and en dashes (–) from bullet points — replace with a space or rephrase
-3. REMOVE all semicolons (;) from bullet points — split into separate clauses or use commas
-4. Replace stiff, robotic corporate phrases with natural, active language
-5. Keep the same Markdown structure (headings, bullets, sections) — do not add or remove sections
-6. Do not change names, dates, companies, job titles, or numbers
-7. Output ONLY the humanized resume in Markdown — no commentary, no analysis"""
+Before rewriting, scan the job description and extract:
+- Every specific tool, technology, and software mentioned
+- Every action verb and methodology the JD uses
+- Every outcome, metric, or result the role cares about
+- The exact phrasing and vocabulary the company uses
 
-    user_message = f"""Humanize this resume for the job below. Keep ALL keywords. Remove ALL em dashes and semicolons from bullets.
+Then rewrite each bullet to:
+1. WEAVE IN the JD's exact keywords, tools, and language naturally — do not just preserve what is already there, actively work them in where truthful and relevant
+2. MIRROR the JD's terminology — if the JD says "cross-functional collaboration" use that phrase, not "worked with teams"
+3. Sound natural and confident — no stiff corporate jargon
+4. REMOVE all em dashes (—) and en dashes (–) — rephrase instead
+5. REMOVE all semicolons (;) — use commas or split into a new clause
+6. Start every bullet with a strong action verb from the JD's vocabulary where possible
+7. Keep the same Markdown structure (headings, bullets, sections) — do not add or remove sections
+8. Do not change names, dates, companies, job titles, or numbers
+9. Output ONLY the rewritten resume in Markdown — no commentary, no analysis"""
 
-Job Description (for keyword reference):
+    user_message = f"""Rewrite this resume to sound human AND to actively use the job description's exact keywords and language in every bullet.
+
+Job Description — extract all keywords, tools, verbs, and terminology from this first:
+<job_description>
 {job_description}
+</job_description>
 
-Resume to humanize:
-{resume_md}"""
+Resume to rewrite:
+<resume>
+{resume_md}
+</resume>
+
+Remember: do not just preserve existing keywords — actively weave JD language into bullets where truthful. Remove all em dashes and semicolons."""
 
     with client.messages.stream(
         model="claude-sonnet-4-6",
