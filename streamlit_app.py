@@ -245,13 +245,16 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
             content = content.replace("—", " ").replace("–", " ").replace(";", ",")
             content = re.sub(r" {2,}", " ", content).strip()
 
-            p = doc.add_paragraph(style="List Bullet")
+            p = doc.add_paragraph()
             _set_para_spacing(p, before=0, after=20)
             pPr = p._p.get_or_add_pPr()
             ind = OxmlElement("w:ind")
             ind.set(qn("w:left"), "360")
             ind.set(qn("w:hanging"), "180")
             pPr.append(ind)
+            bullet_run = p.add_run("• ")
+            bullet_run.font.name = "Calibri"
+            bullet_run.font.size = Pt(10.5)
             _add_run_with_inline(p, content)
 
         # ── Skill category line: **Label:** items ────────────────────────────
