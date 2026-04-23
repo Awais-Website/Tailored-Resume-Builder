@@ -389,6 +389,62 @@ Remember: use their tools, their words, their metrics. Make every answer feel li
             yield text
 
 
+def stream_humanized_resume(client, resume_md: str, job_description: str):
+    system = """You are a professional resume editor who specialises in making resumes sound natural, confident, and human — while keeping every keyword and skill intact.
+
+Rules:
+1. PRESERVE every keyword, tool, technology, metric, and skill from the original
+2. REMOVE all em dashes (—) and en dashes (–) from bullet points — replace with a space or rephrase
+3. REMOVE all semicolons (;) from bullet points — split into separate clauses or use commas
+4. Replace stiff, robotic corporate phrases with natural, active language
+5. Keep the same Markdown structure (headings, bullets, sections) — do not add or remove sections
+6. Do not change names, dates, companies, job titles, or numbers
+7. Output ONLY the humanized resume in Markdown — no commentary, no analysis"""
+
+    user_message = f"""Humanize this resume for the job below. Keep ALL keywords. Remove ALL em dashes and semicolons from bullets.
+
+Job Description (for keyword reference):
+{job_description}
+
+Resume to humanize:
+{resume_md}"""
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=4000,
+        system=system,
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
+def stream_gap_report(client, resume_md: str, job_description: str):
+    system = """You are a resume gap analyst. Given a resume and a job description, identify requirements from the JD that are unaddressed or weakly addressed in the resume. Be concise and actionable."""
+
+    user_message = f"""Analyze this resume against the job description and produce a Gap Report.
+
+Job Description:
+{job_description}
+
+Resume:
+{resume_md}
+
+Output a Gap Report covering:
+1. Unaddressed or weakly addressed requirements (with severity: High / Medium / Low)
+2. Mitigation strategy for each gap
+3. Overall assessment (1–2 sentences)"""
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=1500,
+        system=system,
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
 def stream_revised_resume(client, system_prompt: str, job_description: str, original_resume: str, discovery_qa: str) -> str:
     user_message = f"""Revise the tailored resume below by incorporating the newly discovered experiences from our Q&A session.
 
@@ -417,15 +473,18 @@ Produce the final revised resume and an updated match analysis."""
 
 # ── Session state init ────────────────────────────────────────────────────────
 for key, default in {
-    "phase": "input",           # input | tailoring | discovery | revision | done
+    "phase": "input",           # input | tailoring | review | discovery | revision | done | humanizing | humanized
     "tailored_resume": "",
     "gap_context": "",
     "discovery_questions": "",
     "discovery_answers": "",
     "ai_suggested_answers": "",
     "final_resume": "",
+    "humanized_resume": "",
+    "humanized_gap": "",
     "system_prompt": "",
     "job_description": "",
+    "pre_humanize_phase": "done",   # which phase triggered humanize (review or done)
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -554,11 +613,11 @@ elif st.session_state.phase == "review":
         st.code(st.session_state.tailored_resume, language="markdown")
 
     st.divider()
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.download_button(
-            "⬇️ Download Resume (.docx)",
+            "⬇️ Download (.docx)",
             data=markdown_to_docx(st.session_state.tailored_resume, st.session_state.job_description),
             file_name="tailored_resume.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -566,13 +625,21 @@ elif st.session_state.phase == "review":
         )
 
     with col2:
-        if st.button("🔍 Experience Discovery (fill gaps)", use_container_width=True):
+        if st.button("🔍 Experience Discovery", use_container_width=True):
             st.session_state.gap_context = st.session_state.tailored_resume
             st.session_state.phase = "discovery"
             st.rerun()
 
     with col3:
-        if st.button("✨ This looks great — I'm done!", use_container_width=True, type="primary"):
+        if st.button("🪄 Humanize Resume", use_container_width=True):
+            st.session_state.pre_humanize_phase = "review"
+            st.session_state.humanized_resume = ""
+            st.session_state.humanized_gap = ""
+            st.session_state.phase = "humanizing"
+            st.rerun()
+
+    with col4:
+        if st.button("✅ Done!", use_container_width=True, type="primary"):
             st.session_state.final_resume = st.session_state.tailored_resume
             st.session_state.phase = "done"
             st.rerun()
@@ -696,7 +763,7 @@ elif st.session_state.phase == "done":
         st.code(st.session_state.final_resume, language="markdown")
 
     st.divider()
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
             "⬇️ Download Final Resume (.docx)",
@@ -707,9 +774,94 @@ elif st.session_state.phase == "done":
             type="primary",
         )
     with col2:
+        if st.button("🪄 Humanize Resume", use_container_width=True):
+            st.session_state.pre_humanize_phase = "done"
+            st.session_state.humanized_resume = ""
+            st.session_state.humanized_gap = ""
+            st.session_state.phase = "humanizing"
+            st.rerun()
+    with col3:
         if st.button("🔁 Tailor for another job", use_container_width=True):
             for key in ["phase", "tailored_resume", "gap_context", "discovery_questions",
-                        "discovery_answers", "final_resume"]:
+                        "discovery_answers", "final_resume", "humanized_resume", "humanized_gap"]:
+                st.session_state[key] = "" if key != "phase" else "input"
+            st.session_state.phase = "input"
+            st.rerun()
+
+
+# ── PHASE: HUMANIZING ─────────────────────────────────────────────────────────
+elif st.session_state.phase == "humanizing":
+    st.subheader("🪄 Humanizing Your Resume")
+
+    # Decide which resume to humanize
+    source = (st.session_state.final_resume
+              if st.session_state.pre_humanize_phase == "done"
+              else st.session_state.tailored_resume)
+
+    client = get_client(api_key)
+
+    # ── Step 1: Humanize ──────────────────────────────────────────────────────
+    if not st.session_state.humanized_resume:
+        st.markdown("**Step 1 of 2 — Rewriting for natural language...**")
+        placeholder = st.empty()
+        full_text = ""
+        with st.spinner("Humanizing resume — preserving all keywords..."):
+            for chunk in stream_humanized_resume(client, source, st.session_state.job_description):
+                full_text += chunk
+                placeholder.markdown(full_text)
+        st.session_state.humanized_resume = full_text
+        st.rerun()
+
+    # ── Step 2: Re-run gap report ─────────────────────────────────────────────
+    if st.session_state.humanized_resume and not st.session_state.humanized_gap:
+        st.markdown("**Step 2 of 2 — Re-running gap analysis...**")
+        placeholder2 = st.empty()
+        gap_text = ""
+        with st.spinner("Running gap analysis on humanized resume..."):
+            for chunk in stream_gap_report(client, st.session_state.humanized_resume,
+                                           st.session_state.job_description):
+                gap_text += chunk
+                placeholder2.markdown(gap_text)
+        st.session_state.humanized_gap = gap_text
+        st.session_state.phase = "humanized"
+        st.rerun()
+
+
+# ── PHASE: HUMANIZED ──────────────────────────────────────────────────────────
+elif st.session_state.phase == "humanized":
+    st.success("🪄 Humanized resume ready!")
+
+    tab1, tab2, tab3 = st.tabs(["📄 Humanized Resume", "📊 Gap Report", "📝 Raw Markdown"])
+    with tab1:
+        st.markdown(st.session_state.humanized_resume)
+    with tab2:
+        st.markdown(st.session_state.humanized_gap)
+    with tab3:
+        st.code(st.session_state.humanized_resume, language="markdown")
+
+    st.divider()
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.download_button(
+            "⬇️ Download Humanized Resume (.docx)",
+            data=markdown_to_docx(st.session_state.humanized_resume, st.session_state.job_description),
+            file_name="humanized_resume.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            type="primary",
+        )
+
+    with col2:
+        back_phase = st.session_state.pre_humanize_phase
+        if st.button("⬅️ Back to Resume", use_container_width=True):
+            st.session_state.phase = back_phase
+            st.rerun()
+
+    with col3:
+        if st.button("🔁 Tailor for another job", use_container_width=True):
+            for key in ["phase", "tailored_resume", "gap_context", "discovery_questions",
+                        "discovery_answers", "final_resume", "humanized_resume", "humanized_gap"]:
                 st.session_state[key] = "" if key != "phase" else "input"
             st.session_state.phase = "input"
             st.rerun()
