@@ -300,10 +300,12 @@ Your workflow:
 4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
 5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
 
-## Bullet Point Rules (STRICT — apply to every experience)
-- Maximum **4 bullets per job/experience** — no exceptions
+## Bullet Point Rules (STRICT — zero tolerance, no exceptions)
+- Maximum **4 bullets per job/experience**
 - Maximum **40 words per bullet** — trim or split anything longer
 - Every bullet must start with a strong action verb
+- **ZERO em dashes (—) or en dashes (–) anywhere in bullets** — rephrase the sentence instead
+- **ZERO semicolons (;) in bullets** — use a comma or split into a new clause
 
 Always respond in structured Markdown. Be specific about which experiences you selected and why."""
 
