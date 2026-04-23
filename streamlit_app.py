@@ -245,11 +245,6 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
             content = content.replace("—", " ").replace("–", " ").replace(";", ",")
             content = re.sub(r" {2,}", " ", content).strip()
 
-            # Rule: truncate to 32 words
-            words = content.split()
-            if len(words) > 32:
-                content = " ".join(words[:32]) + "..."
-
             p = doc.add_paragraph(style="List Bullet")
             _set_para_spacing(p, before=0, after=20)
             pPr = p._p.get_or_add_pPr()
@@ -423,7 +418,9 @@ Rules:
 - Do NOT change any names, dates, companies, or job titles
 - Do NOT add new bullets — only edit existing text
 - Preserve all bullet rules: max 4 bullets per role, no em dashes, no semicolons
-- If any bullet exceeds 32 words, rewrite it to fit within 32 words — do NOT truncate, rewrite intelligently to keep the keyword, metric, and core impact intact
+- ZERO TOLERANCE: Every bullet must be 32 words or fewer — count the words, rewrite until it fits
+- Do NOT truncate — rewrite intelligently to keep the keyword, metric, and core impact
+- This is mandatory: no bullet may leave this step longer than 32 words under any circumstance
 - Output ONLY the patched resume in Markdown — no commentary"""
 
     user_message = f"""Audit this resume against the keyword list. Insert any missing exact phrases naturally.
