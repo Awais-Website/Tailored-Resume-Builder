@@ -422,7 +422,8 @@ Rules:
 - Tool substitution: if a bullet mentions a tool NOT in the keyword list, replace it with the closest equivalent tool that IS in the keyword list
 - Do NOT change any names, dates, companies, or job titles
 - Do NOT add new bullets — only edit existing text
-- Preserve all bullet rules: max 4 bullets per role, max 32 words, no em dashes, no semicolons
+- Preserve all bullet rules: max 4 bullets per role, no em dashes, no semicolons
+- If any bullet exceeds 32 words, rewrite it to fit within 32 words — do NOT truncate, rewrite intelligently to keep the keyword, metric, and core impact intact
 - Output ONLY the patched resume in Markdown — no commentary"""
 
     user_message = f"""Audit this resume against the keyword list. Insert any missing exact phrases naturally.
