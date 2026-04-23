@@ -108,16 +108,32 @@ def markdown_to_docx(md_text: str) -> bytes:
     normal.font.size = Pt(10.5)
     normal.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
 
-    # Strip any match analysis section that Claude may still include
-    _stop_patterns = re.compile(
-        r"^#+\s*(updated\s+)?match\s+analysis|^#+\s*content\s+match|^#+\s*selection\s+rationale",
+    # Strip unwanted sections (match analysis, certifications, gap report) from the docx
+    _skip_headings = re.compile(
+        r"^#+\s*("
+        r"(updated\s+)?match\s+analysis"
+        r"|content\s+match"
+        r"|selection\s+rationale"
+        r"|certifications?"
+        r"|gap\s+report"
+        r"|unaddressed.*requirements?"
+        r"|weakly\s+addressed"
+        r"|overall\s+assessment"
+        r")",
         re.IGNORECASE,
     )
     clean_lines = []
+    skip = False
     for ln in md_text.splitlines():
-        if _stop_patterns.match(ln.strip()):
-            break
-        clean_lines.append(ln)
+        if _skip_headings.match(ln.strip()):
+            skip = True          # start skipping this section
+            continue
+        if skip and re.match(r"^#+\s", ln.strip()):
+            # A new heading that is NOT in the skip list → stop skipping
+            if not _skip_headings.match(ln.strip()):
+                skip = False
+        if not skip:
+            clean_lines.append(ln)
     lines = clean_lines
 
     i = 0
@@ -212,7 +228,7 @@ Your workflow:
 4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
 5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
 
-## Required Resume Structure (follow exactly)
+## Required Resume Structure (follow exactly — no extra sections)
 
 ```
 # Full Name
@@ -222,10 +238,8 @@ Contact line: Email | Phone | LinkedIn | Location
 2–3 sentence professional summary targeting this specific role.
 
 ## SKILLS
-**Category (e.g. Data & Analytics):** Tool1, Tool2, Tool3
-**Category (e.g. Programming):** Python, SQL, ...
-**Category (e.g. Visualization):** Tableau, Power BI, ...
-**Category (e.g. Other):** ...
+**Technical Skills:** Tool1, Tool2, Tool3, Tool4
+**Tools & Platforms:** Tool5, Tool6, Tool7
 
 ## EXPERIENCE
 ### Job Title — Company Name | Start – End
@@ -238,22 +252,20 @@ Contact line: Email | Phone | LinkedIn | Location
 ## EDUCATION
 ### Degree — Institution | Year
 - Relevant detail
-
-## CERTIFICATIONS (if any)
-- Certification name
 ```
 
 ## Skills Section Rules (CRITICAL)
-- Include ONLY skills and tools that appear in or are directly relevant to the job description
-- Do NOT include tools from the candidate's resume that the JD does not ask for
-- Use EXACTLY 2 sub-headings maximum — combine logically (e.g. "Technical Skills" and "Tools & Platforms", or "Data & Analytics" and "Software & Tools")
-- Format: **Category Label:** Tool1, Tool2, Tool3 (all on one line per category)
-- Keep each category line concise — no more than 8–10 items per line
+- Include ONLY skills and tools that are explicitly mentioned in the job description
+- Do NOT include anything from the candidate's resume that the JD does not ask for
+- Use EXACTLY 2 sub-headings — no more, no less: "Technical Skills" and "Tools & Platforms"
+- Format each as: **Label:** item1, item2, item3 — all on a single line
+- Maximum 10 items per line
 
 ## Output Format Rules (CRITICAL)
-- Output ONLY the resume followed by the Gap Report
-- Do NOT include any match analysis, scoring, confidence levels, or explanation of selections
-- The resume must be clean and ready to download — no meta-commentary inside it
+- Output ONLY the resume, then the Gap Report
+- Do NOT output a Certifications section
+- Do NOT output any match analysis, scoring, confidence levels, or explanation of selections
+- Do NOT add any commentary, notes, or headings outside the resume structure above
 
 Always respond in structured Markdown."""
 
