@@ -189,6 +189,7 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
         clean_lines = clean_lines[:skills_start] + new_skills_block + clean_lines[skills_end:]
 
     lines = clean_lines
+    _bullet_count = 0   # resets at each new H3 (job entry)
 
     i = 0
     while i < len(lines):
@@ -209,6 +210,7 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
         # ── H2: Section headers (blue with bottom border) ────────────────────
         elif stripped.startswith("## "):
+            _bullet_count = 0
             text = stripped[3:].strip().upper()
             p = doc.add_paragraph()
             _set_para_spacing(p, before=120, after=20)
@@ -221,6 +223,7 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
         # ── H3: Job title / sub-heading ──────────────────────────────────────
         elif stripped.startswith("### "):
+            _bullet_count = 0   # new experience block — reset bullet counter
             text = stripped[4:].strip()
             p = doc.add_paragraph()
             _set_para_spacing(p, before=80, after=0)
@@ -231,10 +234,22 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
         # ── Bullet points ────────────────────────────────────────────────────
         elif stripped.startswith("- ") or stripped.startswith("* "):
+            # Rule: max 4 bullets per experience block
+            if _bullet_count >= 4:
+                i += 1
+                continue
+            _bullet_count += 1
+
             content = stripped[2:]
             # Remove em dashes and semicolons from bullet text
             content = content.replace("—", " ").replace("–", " ").replace(";", ",")
             content = re.sub(r" {2,}", " ", content).strip()
+
+            # Rule: truncate to 40 words
+            words = content.split()
+            if len(words) > 40:
+                content = " ".join(words[:40]) + "..."
+
             p = doc.add_paragraph(style="List Bullet")
             _set_para_spacing(p, before=0, after=20)
             pPr = p._p.get_or_add_pPr()
@@ -284,6 +299,11 @@ Your workflow:
 3. **Reframe** — Adjust terminology and emphasis to align with the target role without altering facts.
 4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
 5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
+
+## Bullet Point Rules (STRICT — apply to every experience)
+- Maximum **4 bullets per job/experience** — no exceptions
+- Maximum **40 words per bullet** — trim or split anything longer
+- Every bullet must start with a strong action verb
 
 Always respond in structured Markdown. Be specific about which experiences you selected and why."""
 
