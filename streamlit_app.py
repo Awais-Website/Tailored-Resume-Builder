@@ -1,7 +1,7 @@
 import streamlit as st
 import anthropic
-import json
 from io import BytesIO
+import pypdf
 
 st.set_page_config(
     page_title="Tailored Resume Builder",
@@ -170,17 +170,23 @@ with st.sidebar:
 
     st.header("📂 Resume Library")
     uploaded_files = st.file_uploader(
-        "Upload your existing resumes (.txt or .md)",
+        "Upload your existing resumes",
         accept_multiple_files=True,
-        type=["txt", "md"],
-        help="Upload 1–10 resumes in plain text or Markdown format.",
+        type=["txt", "md", "pdf"],
+        help="Upload 1–10 resumes in PDF, plain text, or Markdown format.",
     )
+
+    def extract_text(file) -> str:
+        if file.name.lower().endswith(".pdf"):
+            reader = pypdf.PdfReader(BytesIO(file.read()))
+            return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return file.read().decode("utf-8", errors="replace")
 
     resumes_text = ""
     if uploaded_files:
         st.success(f"{len(uploaded_files)} resume(s) loaded")
         for i, f in enumerate(uploaded_files, 1):
-            content = f.read().decode("utf-8", errors="replace")
+            content = extract_text(f)
             resumes_text += f"\n\n--- RESUME {i}: {f.name} ---\n{content}"
 
     st.divider()
