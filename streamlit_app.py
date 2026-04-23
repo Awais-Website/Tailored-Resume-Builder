@@ -194,7 +194,7 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
     i = 0
     while i < len(lines):
         raw = lines[i]
-        stripped = raw.rstrip()
+        stripped = raw.strip()
 
         # ── H1: Candidate name (large, centred, dark) ────────────────────────
         if stripped.startswith("# "):
@@ -254,6 +254,24 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
             pPr.append(ind)
             _add_run_with_inline(p, content)
 
+        # ── Skill category line: **Label:** items ────────────────────────────
+        elif re.match(r"^\*\*[^*]+:\*\*\s+.+", stripped):
+            p = doc.add_paragraph()
+            _set_para_spacing(p, before=30, after=30)
+            m = re.match(r"^\*\*([^*]+):\*\*\s+(.+)$", stripped)
+            if m:
+                label = p.add_run(m.group(1) + ": ")
+                label.bold = True
+                label.font.name = "Calibri"
+                label.font.size = Pt(10.5)
+                label.font.color.rgb = RGBColor(0x1F, 0x35, 0x64)
+                items = p.add_run(m.group(2))
+                items.font.name = "Calibri"
+                items.font.size = Pt(10.5)
+                items.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
+            else:
+                _add_run_with_inline(p, stripped)
+
         # ── Horizontal rule → thin spacer ────────────────────────────────────
         elif re.match(r"^---+$", stripped) or re.match(r"^___+$", stripped):
             p = doc.add_paragraph()
@@ -261,15 +279,14 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
         # ── Empty line → small vertical gap ──────────────────────────────────
         elif stripped == "":
-            # Only add gap if previous wasn't already blank
             if i > 0 and lines[i - 1].strip() != "":
                 p = doc.add_paragraph()
-                _set_para_spacing(p, before=0, after=40)
+                _set_para_spacing(p, before=0, after=30)
 
         # ── Plain paragraph ───────────────────────────────────────────────────
         else:
             p = doc.add_paragraph()
-            _set_para_spacing(p, before=0, after=20)
+            _set_para_spacing(p, before=0, after=16)
             _add_run_with_inline(p, stripped)
 
         i += 1
