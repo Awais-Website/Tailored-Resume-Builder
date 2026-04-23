@@ -324,13 +324,13 @@ Do NOT rely on semantic similarity. If the keyword list says "data visualization
 
 ## Bullet Point Rules (STRICT — zero tolerance)
 - Maximum 4 bullets per job/experience
-- Maximum 32 words per bullet — generate short and punchy from the start, never exceed this
+- Maximum 28 words per bullet — generate short and punchy from the start, never exceed this
 - Every bullet starts with a strong action verb from the JD's vocabulary
 - ZERO em dashes (—) or en dashes (–) in bullets — rephrase instead
 - ZERO semicolons (;) in bullets — use a comma or split into a new clause
 
 ## Page & Projects Rules
-- Target ONE page — achieve this through the 32-word bullet limit and 4-bullet max, never by dropping bullets from any experience
+- Target ONE page — achieve this through the 28-word bullet limit and 4-bullet max, never by dropping bullets from any experience
 - Every experience MUST have its bullets — do not leave any role without bullet points
 - For the Projects section: use ONLY the top 3 projects ranked in the keyword extraction step — ignore all others
 - Show the relevance score next to each project heading (e.g. "Project Name — 87/100")
@@ -407,7 +407,7 @@ def stream_tailored_resume(client, system_prompt: str, job_description: str,
 Rules:
 - Use ONLY the top 3 ranked projects from the Project Relevance Ranking table — ignore all others
 - Show the relevance score next to each project heading e.g. "Project Name — 87/100"
-- Keep every bullet under 32 words — punchy and tight from the start
+- Keep every bullet under 28 words — punchy and tight from the start
 - Every experience must have bullets — never leave a role empty
 - Fit one page through brevity, not by dropping bullets
 
@@ -443,9 +443,9 @@ Rules:
 - Do NOT change any names, dates, companies, or job titles
 - Do NOT add new bullets — only edit existing text
 - Preserve all bullet rules: max 4 bullets per role, no em dashes, no semicolons
-- ZERO TOLERANCE: Every bullet must be 32 words or fewer — count the words, rewrite until it fits
+- ZERO TOLERANCE: Every bullet must be 28 words or fewer — count the words, rewrite until it fits
 - Do NOT truncate — rewrite intelligently to keep the keyword, metric, and core impact
-- This is mandatory: no bullet may leave this step longer than 32 words under any circumstance
+- This is mandatory: no bullet may leave this step longer than 28 words under any circumstance
 - Output ONLY the patched resume in Markdown — no commentary"""
 
     user_message = f"""Audit this resume against the keyword list. Insert any missing exact phrases naturally.
