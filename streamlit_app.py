@@ -232,6 +232,9 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
         # ── Bullet points ────────────────────────────────────────────────────
         elif stripped.startswith("- ") or stripped.startswith("* "):
             content = stripped[2:]
+            # Remove em dashes and semicolons from bullet text
+            content = content.replace("—", " ").replace("–", " ").replace(";", ",")
+            content = re.sub(r" {2,}", " ", content).strip()
             p = doc.add_paragraph(style="List Bullet")
             _set_para_spacing(p, before=0, after=20)
             pPr = p._p.get_or_add_pPr()
