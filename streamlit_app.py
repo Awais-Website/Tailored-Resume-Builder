@@ -245,10 +245,10 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
             content = content.replace("—", " ").replace("–", " ").replace(";", ",")
             content = re.sub(r" {2,}", " ", content).strip()
 
-            # Rule: truncate to 40 words
+            # Rule: truncate to 32 words
             words = content.split()
-            if len(words) > 40:
-                content = " ".join(words[:40]) + "..."
+            if len(words) > 32:
+                content = " ".join(words[:32]) + "..."
 
             p = doc.add_paragraph(style="List Bullet")
             _set_para_spacing(p, before=0, after=20)
@@ -329,7 +329,7 @@ Do NOT rely on semantic similarity. If the keyword list says "data visualization
 
 ## Bullet Point Rules (STRICT — zero tolerance)
 - Maximum 4 bullets per job/experience
-- Maximum 40 words per bullet
+- Maximum 32 words per bullet — this is a hard limit, never exceed it
 - Every bullet starts with a strong action verb from the JD's vocabulary
 - ZERO em dashes (—) or en dashes (–) in bullets — rephrase instead
 - ZERO semicolons (;) in bullets — use a comma or split into a new clause
@@ -422,7 +422,7 @@ Rules:
 - Tool substitution: if a bullet mentions a tool NOT in the keyword list, replace it with the closest equivalent tool that IS in the keyword list
 - Do NOT change any names, dates, companies, or job titles
 - Do NOT add new bullets — only edit existing text
-- Preserve all bullet rules: max 4 bullets per role, max 40 words, no em dashes, no semicolons
+- Preserve all bullet rules: max 4 bullets per role, max 32 words, no em dashes, no semicolons
 - Output ONLY the patched resume in Markdown — no commentary"""
 
     user_message = f"""Audit this resume against the keyword list. Insert any missing exact phrases naturally.
