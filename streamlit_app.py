@@ -2,6 +2,10 @@ import streamlit as st
 import anthropic
 from io import BytesIO
 import pypdf
+import re
+from docx import Document
+from docx.shared import Pt, RGBColor, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 st.set_page_config(
     page_title="Tailored Resume Builder",
@@ -47,6 +51,73 @@ st.markdown("""
 
 def get_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
+
+
+def markdown_to_docx(md_text: str) -> bytes:
+    doc = Document()
+
+    # Page margins
+    for section in doc.sections:
+        section.top_margin    = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+        section.left_margin   = Inches(1.0)
+        section.right_margin  = Inches(1.0)
+
+    # Default paragraph style
+    style = doc.styles["Normal"]
+    style.font.name = "Calibri"
+    style.font.size = Pt(11)
+
+    def add_run_with_inline(para, text):
+        """Handle **bold** and *italic* inline markers."""
+        parts = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", text)
+        for part in parts:
+            if part.startswith("**") and part.endswith("**"):
+                run = para.add_run(part[2:-2])
+                run.bold = True
+            elif part.startswith("*") and part.endswith("*"):
+                run = para.add_run(part[1:-1])
+                run.italic = True
+            else:
+                para.add_run(part)
+
+    for line in md_text.splitlines():
+        stripped = line.rstrip()
+
+        if stripped.startswith("### "):
+            p = doc.add_heading(stripped[4:], level=3)
+            p.runs[0].font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+
+        elif stripped.startswith("## "):
+            p = doc.add_heading(stripped[3:], level=2)
+            p.runs[0].font.color.rgb = RGBColor(0x26, 0x27, 0x30)
+
+        elif stripped.startswith("# "):
+            p = doc.add_heading(stripped[2:], level=1)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.runs[0].font.color.rgb = RGBColor(0x26, 0x27, 0x30)
+
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            p = doc.add_paragraph(style="List Bullet")
+            add_run_with_inline(p, stripped[2:])
+
+        elif re.match(r"^\d+\.\s", stripped):
+            p = doc.add_paragraph(style="List Number")
+            add_run_with_inline(p, re.sub(r"^\d+\.\s", "", stripped))
+
+        elif stripped.startswith("---") or stripped.startswith("___"):
+            doc.add_paragraph("─" * 60)
+
+        elif stripped == "":
+            doc.add_paragraph("")
+
+        else:
+            p = doc.add_paragraph()
+            add_run_with_inline(p, stripped)
+
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
 def build_system_prompt(resumes_text: str) -> str:
@@ -338,10 +409,10 @@ elif st.session_state.phase == "review":
 
     with col1:
         st.download_button(
-            "⬇️ Download Resume (.md)",
-            data=st.session_state.tailored_resume.encode(),
-            file_name="tailored_resume.md",
-            mime="text/markdown",
+            "⬇️ Download Resume (.docx)",
+            data=markdown_to_docx(st.session_state.tailored_resume),
+            file_name="tailored_resume.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
         )
 
@@ -479,10 +550,10 @@ elif st.session_state.phase == "done":
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
-            "⬇️ Download Final Resume (.md)",
-            data=st.session_state.final_resume.encode(),
-            file_name="tailored_resume_final.md",
-            mime="text/markdown",
+            "⬇️ Download Final Resume (.docx)",
+            data=markdown_to_docx(st.session_state.final_resume),
+            file_name="tailored_resume_final.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
             type="primary",
         )
