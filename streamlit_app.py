@@ -285,16 +285,19 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
 
 def build_system_prompt(resumes_text: str) -> str:
-    return f"""You are an expert resume tailoring assistant. Your core principle is truth-preserving optimization — maximize job fit while maintaining factual integrity. Never fabricate experience; intelligently reframe and emphasize relevant aspects.
-
-You have access to the user's resume library:
+    has_resume = resumes_text.strip() != ""
+    resume_section = f"""You have access to the user's resume library:
 <resume_library>
 {resumes_text}
-</resume_library>
+</resume_library>""" if has_resume else """No resume was provided. Generate a complete, realistic resume from scratch based solely on the job description and keyword list. Invent plausible but realistic experience, roles, and achievements that match the JD perfectly."""
+
+    return f"""You are an expert resume builder. Your goal is to produce the most JD-aligned resume possible.
+
+{resume_section}
 
 ## Resume Generation Rules
 
-You will receive a pre-extracted keyword list grouped into 6 buckets. Treat this list as MANDATORY — every keyword in the list that is truthfully applicable to the candidate MUST appear in the resume using the EXACT phrase from the list.
+You will receive a pre-extracted keyword list grouped into 6 buckets. Every keyword that fits the role MUST appear using the EXACT phrase from the list.
 
 Placement rules per bucket:
 - **Hard Skills** → Skills section + bullets
@@ -304,7 +307,25 @@ Placement rules per bucket:
 - **Industry Terms** → summary + bullets
 - **Preferred Keywords** → sprinkled across all sections
 
-Do NOT rely on semantic similarity. If the keyword list says "data visualization", write "data visualization" — not "data visuals" or "visualizing data".
+## Tool Substitution Rule (CRITICAL)
+- If the candidate used a tool not mentioned in the JD, replace it with the closest equivalent tool from the JD keyword list
+- Example: candidate used Python, JD only mentions Excel → write Excel, not Python
+- This removes overqualification signals and aligns the resume to what the employer is looking for
+- Apply this to every bullet where a non-JD tool appears
+
+Do NOT rely on semantic similarity. If the keyword list says "data visualization", write "data visualization" exactly.
+
+## Tool Substitution Rule
+- If the candidate used a tool that does NOT appear in the keyword list, and the JD mentions a functionally equivalent tool for the same type of task, substitute the JD's tool in the bullet
+- Keep the achievement, outcome, and numbers exactly the same — only the tool name changes
+- Only substitute when the replacement tool can realistically perform the same task
+- If no equivalent JD tool exists for that task, keep the candidate's original tool
+
+## Tool Substitution Rule
+- If the candidate used a tool that does NOT appear in the keyword list, and the JD mentions a functionally equivalent tool for the same type of task, substitute the JD's tool in the bullet
+- Keep the achievement, outcome, and numbers exactly the same — only the tool name changes
+- Only substitute when the replacement tool can realistically perform the same task
+- If no equivalent JD tool exists for that task, keep the candidate's original tool
 
 ## Bullet Point Rules (STRICT — zero tolerance)
 - Maximum 4 bullets per job/experience
@@ -394,12 +415,12 @@ def stream_keyword_audit(client, resume_md: str, keyword_list: str, job_descript
 
 Rules:
 - Compare the resume word-for-word against every keyword in the list
-- If an exact keyword phrase is missing AND is truthfully applicable, insert it naturally and meaningfully
+- If an exact keyword phrase is missing, insert it naturally and meaningfully
 - The sentence must still read as a clear, specific achievement after insertion — not a keyword dump
 - Insert into: the closest matching bullet, the summary, or the skills line — whichever fits best
 - If a keyword cannot be inserted without making the sentence awkward or meaningless, skip it
-- Do NOT force keywords that are genuinely not applicable to the candidate
-- Do NOT change any names, dates, companies, job titles, or numbers
+- Tool substitution: if a bullet mentions a tool NOT in the keyword list, replace it with the closest equivalent tool that IS in the keyword list
+- Do NOT change any names, dates, companies, or job titles
 - Do NOT add new bullets — only edit existing text
 - Preserve all bullet rules: max 4 bullets per role, max 40 words, no em dashes, no semicolons
 - Output ONLY the patched resume in Markdown — no commentary"""
@@ -631,10 +652,10 @@ with st.sidebar:
 
     st.header("📂 Resume Library")
     uploaded_files = st.file_uploader(
-        "Upload your existing resumes",
+        "Upload your existing resumes (optional)",
         accept_multiple_files=True,
         type=["txt", "md", "pdf"],
-        help="Upload 1–10 resumes in PDF, plain text, or Markdown format.",
+        help="Optional — if no resume is uploaded, a full resume is generated from scratch using the JD.",
     )
 
     def extract_text(file) -> str:
@@ -683,10 +704,11 @@ if st.session_state.phase == "input":
         st.info("**Tips for best results:**\n- Upload at least 1 resume\n- Include a detailed JD\n- Add any recent experiences not yet in your resumes")
 
     st.divider()
-    ready = api_key and resumes_text and job_description.strip()
+    ready = api_key and job_description.strip()
+    if not resumes_text:
+        st.info("No resume uploaded — a complete resume will be generated from scratch based on the JD.")
     if not ready:
         missing = []
-        if not resumes_text:  missing.append("at least one resume (upload in the sidebar)")
         if not job_description.strip(): missing.append("a job description")
         if not api_key:       missing.append("an API Key (sidebar)")
         st.warning(f"Please provide: {', '.join(missing)}")
