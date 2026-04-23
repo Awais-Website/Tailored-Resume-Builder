@@ -92,7 +92,7 @@ def _add_run_with_inline(para, text, base_size=Pt(10.5), base_font="Calibri"):
         run.font.size = base_size
 
 
-def markdown_to_docx(md_text: str) -> bytes:
+def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
     doc = Document()
 
     # ── Page setup ────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ def markdown_to_docx(md_text: str) -> bytes:
     normal.font.size = Pt(10.5)
     normal.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
 
-    # Strip unwanted sections (match analysis, certifications, gap report) from the docx
+    # ── Step 1: Strip unwanted sections from the docx output ─────────────────
     _skip_headings = re.compile(
         r"^#+\s*("
         r"(updated\s+)?match\s+analysis"
@@ -126,14 +126,68 @@ def markdown_to_docx(md_text: str) -> bytes:
     skip = False
     for ln in md_text.splitlines():
         if _skip_headings.match(ln.strip()):
-            skip = True          # start skipping this section
+            skip = True
             continue
         if skip and re.match(r"^#+\s", ln.strip()):
-            # A new heading that is NOT in the skip list → stop skipping
             if not _skip_headings.match(ln.strip()):
                 skip = False
         if not skip:
             clean_lines.append(ln)
+
+    # ── Step 2: Filter & consolidate Skills section ───────────────────────────
+    # Build a set of JD words for relevance matching
+    jd_words = set(re.findall(r"[a-zA-Z][a-zA-Z0-9#+.\-]{1,}", job_description.lower())) if job_description else set()
+
+    def _skill_relevant(skill_item: str) -> bool:
+        """Return True if the skill token appears in the JD (case-insensitive)."""
+        if not jd_words:
+            return True  # no JD provided — keep everything
+        token = skill_item.strip().lower()
+        # Direct word match OR the token is a substring of any JD word
+        return token in jd_words or any(token in jw or jw in token for jw in jd_words if len(jw) > 2)
+
+    # Locate the SKILLS section and rewrite it with only 2 headings
+    _skills_heading = re.compile(r"^##\s+skills", re.IGNORECASE)
+    _next_h2 = re.compile(r"^##\s+", re.IGNORECASE)
+    _skill_line = re.compile(r"^\*\*(.+?):\*\*\s*(.+)$")
+
+    skills_start = None
+    skills_end = None
+    for idx, ln in enumerate(clean_lines):
+        if _skills_heading.match(ln.strip()):
+            skills_start = idx
+        elif skills_start is not None and skills_end is None and _next_h2.match(ln.strip()) and idx > skills_start:
+            skills_end = idx
+            break
+    if skills_start is not None and skills_end is None:
+        skills_end = len(clean_lines)
+
+    if skills_start is not None:
+        # Collect all skill items from every sub-heading in the section
+        all_skills = []
+        for ln in clean_lines[skills_start + 1: skills_end]:
+            m = _skill_line.match(ln.strip())
+            if m:
+                items = [s.strip() for s in m.group(2).split(",") if s.strip()]
+                all_skills.extend(items)
+
+        # Filter to JD-relevant only
+        filtered = [s for s in all_skills if _skill_relevant(s)]
+        if not filtered:
+            filtered = all_skills  # fallback: keep all if filter removes everything
+
+        # Split into 2 balanced groups
+        mid = (len(filtered) + 1) // 2
+        group1 = ", ".join(filtered[:mid])
+        group2 = ", ".join(filtered[mid:])
+
+        new_skills_block = ["## SKILLS"]
+        new_skills_block.append(f"**Technical Skills:** {group1}")
+        if group2:
+            new_skills_block.append(f"**Tools & Platforms:** {group2}")
+
+        clean_lines = clean_lines[:skills_start] + new_skills_block + clean_lines[skills_end:]
+
     lines = clean_lines
 
     i = 0
@@ -228,46 +282,7 @@ Your workflow:
 4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
 5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
 
-## Required Resume Structure (follow exactly — no extra sections)
-
-```
-# Full Name
-Contact line: Email | Phone | LinkedIn | Location
-
-## SUMMARY
-2–3 sentence professional summary targeting this specific role.
-
-## SKILLS
-**Technical Skills:** Tool1, Tool2, Tool3, Tool4
-**Tools & Platforms:** Tool5, Tool6, Tool7
-
-## EXPERIENCE
-### Job Title — Company Name | Start – End
-- Achievement bullet using numbers and impact
-- Achievement bullet
-
-### Job Title — Company Name | Start – End
-- Achievement bullet
-
-## EDUCATION
-### Degree — Institution | Year
-- Relevant detail
-```
-
-## Skills Section Rules (CRITICAL)
-- Include ONLY skills and tools that are explicitly mentioned in the job description
-- Do NOT include anything from the candidate's resume that the JD does not ask for
-- Use EXACTLY 2 sub-headings — no more, no less: "Technical Skills" and "Tools & Platforms"
-- Format each as: **Label:** item1, item2, item3 — all on a single line
-- Maximum 10 items per line
-
-## Output Format Rules (CRITICAL)
-- Output ONLY the resume, then the Gap Report
-- Do NOT output a Certifications section
-- Do NOT output any match analysis, scoring, confidence levels, or explanation of selections
-- Do NOT add any commentary, notes, or headings outside the resume structure above
-
-Always respond in structured Markdown."""
+Always respond in structured Markdown. Be specific about which experiences you selected and why."""
 
 
 def stream_tailored_resume(client, system_prompt: str, job_description: str, extra_context: str) -> str:
@@ -279,7 +294,7 @@ def stream_tailored_resume(client, system_prompt: str, job_description: str, ext
     if extra_context.strip():
         user_message += f"\n**Additional context about my background:**\n{extra_context}\n"
 
-    user_message += "\nPlease produce:\n1. The full tailored resume in Markdown (clean, no commentary inside it)\n2. A gap report listing any unaddressed JD requirements with mitigation tips\n\nDo NOT include any match analysis, scoring, or meta-commentary."
+    user_message += "\nPlease produce:\n1. A full tailored resume in Markdown\n2. A brief match analysis (which experiences you selected and confidence scores)\n3. A gap report listing any unaddressed requirements with mitigation tips"
 
     full_response = ""
     with client.messages.stream(
@@ -541,7 +556,7 @@ elif st.session_state.phase == "review":
     with col1:
         st.download_button(
             "⬇️ Download Resume (.docx)",
-            data=markdown_to_docx(st.session_state.tailored_resume),
+            data=markdown_to_docx(st.session_state.tailored_resume, st.session_state.job_description),
             file_name="tailored_resume.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
@@ -682,7 +697,7 @@ elif st.session_state.phase == "done":
     with col1:
         st.download_button(
             "⬇️ Download Final Resume (.docx)",
-            data=markdown_to_docx(st.session_state.final_resume),
+            data=markdown_to_docx(st.session_state.final_resume, st.session_state.job_description),
             file_name="tailored_resume_final.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
