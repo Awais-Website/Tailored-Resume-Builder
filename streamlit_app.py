@@ -394,8 +394,10 @@ def stream_keyword_audit(client, resume_md: str, keyword_list: str, job_descript
 
 Rules:
 - Compare the resume word-for-word against every keyword in the list
-- If an exact keyword phrase is missing AND is truthfully applicable, insert it naturally
+- If an exact keyword phrase is missing AND is truthfully applicable, insert it naturally and meaningfully
+- The sentence must still read as a clear, specific achievement after insertion — not a keyword dump
 - Insert into: the closest matching bullet, the summary, or the skills line — whichever fits best
+- If a keyword cannot be inserted without making the sentence awkward or meaningless, skip it
 - Do NOT force keywords that are genuinely not applicable to the candidate
 - Do NOT change any names, dates, companies, job titles, or numbers
 - Do NOT add new bullets — only edit existing text
