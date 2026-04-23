@@ -108,7 +108,18 @@ def markdown_to_docx(md_text: str) -> bytes:
     normal.font.size = Pt(10.5)
     normal.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
 
-    lines = md_text.splitlines()
+    # Strip any match analysis section that Claude may still include
+    _stop_patterns = re.compile(
+        r"^#+\s*(updated\s+)?match\s+analysis|^#+\s*content\s+match|^#+\s*selection\s+rationale",
+        re.IGNORECASE,
+    )
+    clean_lines = []
+    for ln in md_text.splitlines():
+        if _stop_patterns.match(ln.strip()):
+            break
+        clean_lines.append(ln)
+    lines = clean_lines
+
     i = 0
     while i < len(lines):
         raw = lines[i]
@@ -233,13 +244,18 @@ Contact line: Email | Phone | LinkedIn | Location
 ```
 
 ## Skills Section Rules (CRITICAL)
-- Extract EVERY tool, technology, software, and platform mentioned in the job description
-- Include ALL of them in the Skills section, grouped by logical category
-- Do not omit any tool from the JD even if the candidate only has partial exposure
-- Also include tools from the candidate's resume that are relevant
-- Format as bold category label followed by comma-separated tools on same line
+- Include ONLY skills and tools that appear in or are directly relevant to the job description
+- Do NOT include tools from the candidate's resume that the JD does not ask for
+- Use EXACTLY 2 sub-headings maximum — combine logically (e.g. "Technical Skills" and "Tools & Platforms", or "Data & Analytics" and "Software & Tools")
+- Format: **Category Label:** Tool1, Tool2, Tool3 (all on one line per category)
+- Keep each category line concise — no more than 8–10 items per line
 
-Always respond in structured Markdown. Be specific about which experiences you selected and why."""
+## Output Format Rules (CRITICAL)
+- Output ONLY the resume followed by the Gap Report
+- Do NOT include any match analysis, scoring, confidence levels, or explanation of selections
+- The resume must be clean and ready to download — no meta-commentary inside it
+
+Always respond in structured Markdown."""
 
 
 def stream_tailored_resume(client, system_prompt: str, job_description: str, extra_context: str) -> str:
@@ -251,7 +267,7 @@ def stream_tailored_resume(client, system_prompt: str, job_description: str, ext
     if extra_context.strip():
         user_message += f"\n**Additional context about my background:**\n{extra_context}\n"
 
-    user_message += "\nPlease produce:\n1. A full tailored resume in Markdown\n2. A brief match analysis (which experiences you selected and confidence scores)\n3. A gap report listing any unaddressed requirements with mitigation tips"
+    user_message += "\nPlease produce:\n1. The full tailored resume in Markdown (clean, no commentary inside it)\n2. A gap report listing any unaddressed JD requirements with mitigation tips\n\nDo NOT include any match analysis, scoring, or meta-commentary."
 
     full_response = ""
     with client.messages.stream(
