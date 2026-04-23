@@ -330,9 +330,10 @@ Do NOT rely on semantic similarity. If the keyword list says "data visualization
 - ZERO semicolons (;) in bullets — use a comma or split into a new clause
 
 ## Page & Projects Rules
-- The entire resume must fit on ONE page — be ruthless about brevity
+- Target ONE page — achieve this through the 32-word bullet limit and 4-bullet max, never by dropping bullets from any experience
+- Every experience MUST have its bullets — do not leave any role without bullet points
 - For the Projects section: use ONLY the top 3 projects ranked in the keyword extraction step — ignore all others
-- Show the relevance score next to each project heading (e.g. "Project Name — 87% match")
+- Show the relevance score next to each project heading (e.g. "Project Name — 87/100")
 
 Always respond in structured Markdown."""
 
@@ -407,7 +408,8 @@ Rules:
 - Use ONLY the top 3 ranked projects from the Project Relevance Ranking table — ignore all others
 - Show the relevance score next to each project heading e.g. "Project Name — 87/100"
 - Keep every bullet under 32 words — punchy and tight from the start
-- Entire resume must fit ONE page
+- Every experience must have bullets — never leave a role empty
+- Fit one page through brevity, not by dropping bullets
 
 Produce:
 1. The full tailored resume in Markdown
