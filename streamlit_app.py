@@ -116,6 +116,45 @@ Ask 3-5 specific, concrete questions. After I answer, you will incorporate my an
             yield text
 
 
+def stream_ai_suggested_answers(client, job_description: str, questions: str, resume_context: str):
+    system = """You are playing the role of an ideal job candidate who has done every relevant thing the company could be looking for.
+
+Your job is to answer experience-discovery questions in a way that:
+- Directly addresses each question with specific, concrete experiences
+- Uses realistic details (projects, tools, numbers, outcomes) that perfectly match what the job description values
+- Sounds authentic and human — not generic
+- Is honest-sounding but optimized: every answer surfaces the most impressive plausible version of the experience
+- Answers in first person as the candidate
+
+Format: Answer each question clearly, numbered to match the questions. Be specific and concise."""
+
+    user_message = f"""Here is the job description the candidate is applying for:
+
+<job_description>
+{job_description}
+</job_description>
+
+Here is the candidate's resume context for reference:
+<resume>
+{resume_context}
+</resume>
+
+Now answer these discovery questions as the ideal candidate for this role:
+
+{questions}
+
+Provide the best possible answers that would maximize the candidate's chances."""
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        system=system,
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
 def stream_revised_resume(client, system_prompt: str, job_description: str, original_resume: str, discovery_qa: str) -> str:
     user_message = f"""Revise the tailored resume below by incorporating the newly discovered experiences from our Q&A session.
 
@@ -149,6 +188,7 @@ for key, default in {
     "gap_context": "",
     "discovery_questions": "",
     "discovery_answers": "",
+    "ai_suggested_answers": "",
     "final_resume": "",
     "system_prompt": "",
     "job_description": "",
@@ -192,7 +232,7 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Start Over", use_container_width=True):
         for key in ["phase", "tailored_resume", "gap_context", "discovery_questions",
-                    "discovery_answers", "final_resume", "system_prompt", "job_description"]:
+                    "discovery_answers", "ai_suggested_answers", "final_resume", "system_prompt", "job_description"]:
             st.session_state[key] = "" if key != "phase" else "input"
         st.rerun()
 
@@ -328,13 +368,42 @@ elif st.session_state.phase == "discovery":
         st.markdown(st.session_state.discovery_questions)
 
     st.divider()
+
+    # ── AI Answer Suggester ───────────────────────────────────────────────────
+    st.markdown("### ✍️ Your Answers")
+    st.caption("Write your own answers, or let AI suggest ideal answers based on the job description — then edit as needed.")
+
+    col_btn1, col_btn2 = st.columns([1, 3])
+    with col_btn1:
+        suggest_clicked = st.button("🤖 Suggest AI Answers", use_container_width=True)
+
+    if suggest_clicked:
+        client = get_client(api_key)
+        suggest_placeholder = st.empty()
+        suggested = ""
+        with st.spinner("AI is generating ideal answers for this role..."):
+            for chunk in stream_ai_suggested_answers(
+                client,
+                st.session_state.job_description,
+                st.session_state.discovery_questions,
+                st.session_state.gap_context,
+            ):
+                suggested += chunk
+                suggest_placeholder.markdown(suggested)
+        st.session_state.ai_suggested_answers = suggested
+        st.rerun()
+
+    if st.session_state.ai_suggested_answers:
+        st.info("**AI-suggested answers below** — these are crafted to match the job description. Edit, remove, or replace anything that doesn't apply to you.")
+
     answers = st.text_area(
-        "Your answers to the questions above:",
-        height=250,
-        placeholder="Answer each question as specifically as possible...",
-        value=st.session_state.discovery_answers,
+        "Your answers (edit AI suggestions or write your own):",
+        height=350,
+        placeholder="Answer each question as specifically as possible...\n\nTip: Click '🤖 Suggest AI Answers' above to get a starting point.",
+        value=st.session_state.ai_suggested_answers or st.session_state.discovery_answers,
     )
 
+    st.divider()
     col1, col2 = st.columns(2)
     with col1:
         if st.button("⬅️ Skip — keep current resume", use_container_width=True):
