@@ -4,8 +4,10 @@ from io import BytesIO
 import pypdf
 import re
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 st.set_page_config(
     page_title="Tailored Resume Builder",
@@ -53,67 +55,130 @@ def get_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _add_bottom_border(paragraph):
+    """Add a bottom border line under a paragraph (used for section headers)."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "2E74B5")
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _set_para_spacing(paragraph, before=0, after=0):
+    pPr = paragraph._p.get_or_add_pPr()
+    pSpacing = OxmlElement("w:spacing")
+    pSpacing.set(qn("w:before"), str(before))
+    pSpacing.set(qn("w:after"), str(after))
+    pPr.append(pSpacing)
+
+
+def _add_run_with_inline(para, text, base_size=Pt(10.5), base_font="Calibri"):
+    """Render **bold**, *italic*, and plain text runs."""
+    parts = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", text)
+    for part in parts:
+        if part.startswith("**") and part.endswith("**"):
+            run = para.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith("*") and part.endswith("*"):
+            run = para.add_run(part[1:-1])
+            run.italic = True
+        else:
+            run = para.add_run(part)
+        run.font.name = base_font
+        run.font.size = base_size
+
+
 def markdown_to_docx(md_text: str) -> bytes:
     doc = Document()
 
-    # Page margins
-    for section in doc.sections:
-        section.top_margin    = Inches(0.75)
-        section.bottom_margin = Inches(0.75)
-        section.left_margin   = Inches(1.0)
-        section.right_margin  = Inches(1.0)
+    # ── Page setup ────────────────────────────────────────────────────────────
+    for sec in doc.sections:
+        sec.top_margin    = Inches(0.6)
+        sec.bottom_margin = Inches(0.6)
+        sec.left_margin   = Inches(0.85)
+        sec.right_margin  = Inches(0.85)
 
-    # Default paragraph style
-    style = doc.styles["Normal"]
-    style.font.name = "Calibri"
-    style.font.size = Pt(11)
+    # Reset Normal style
+    normal = doc.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal.font.size = Pt(10.5)
+    normal.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
 
-    def add_run_with_inline(para, text):
-        """Handle **bold** and *italic* inline markers."""
-        parts = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", text)
-        for part in parts:
-            if part.startswith("**") and part.endswith("**"):
-                run = para.add_run(part[2:-2])
-                run.bold = True
-            elif part.startswith("*") and part.endswith("*"):
-                run = para.add_run(part[1:-1])
-                run.italic = True
-            else:
-                para.add_run(part)
+    lines = md_text.splitlines()
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        stripped = raw.rstrip()
 
-    for line in md_text.splitlines():
-        stripped = line.rstrip()
-
-        if stripped.startswith("### "):
-            p = doc.add_heading(stripped[4:], level=3)
-            p.runs[0].font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
-
-        elif stripped.startswith("## "):
-            p = doc.add_heading(stripped[3:], level=2)
-            p.runs[0].font.color.rgb = RGBColor(0x26, 0x27, 0x30)
-
-        elif stripped.startswith("# "):
-            p = doc.add_heading(stripped[2:], level=1)
+        # ── H1: Candidate name (large, centred, dark) ────────────────────────
+        if stripped.startswith("# "):
+            text = stripped[2:].strip()
+            p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.runs[0].font.color.rgb = RGBColor(0x26, 0x27, 0x30)
+            _set_para_spacing(p, before=0, after=40)
+            run = p.add_run(text)
+            run.font.name = "Calibri"
+            run.font.size = Pt(22)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0x1F, 0x35, 0x64)
 
+        # ── H2: Section headers (blue with bottom border) ────────────────────
+        elif stripped.startswith("## "):
+            text = stripped[3:].strip().upper()
+            p = doc.add_paragraph()
+            _set_para_spacing(p, before=120, after=20)
+            run = p.add_run(text)
+            run.font.name = "Calibri"
+            run.font.size = Pt(11)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0x2E, 0x74, 0xB5)
+            _add_bottom_border(p)
+
+        # ── H3: Job title / sub-heading ──────────────────────────────────────
+        elif stripped.startswith("### "):
+            text = stripped[4:].strip()
+            p = doc.add_paragraph()
+            _set_para_spacing(p, before=80, after=0)
+            _add_run_with_inline(p, text, base_size=Pt(10.5))
+            for run in p.runs:
+                run.bold = True
+                run.font.color.rgb = RGBColor(0x26, 0x26, 0x26)
+
+        # ── Bullet points ────────────────────────────────────────────────────
         elif stripped.startswith("- ") or stripped.startswith("* "):
+            content = stripped[2:]
             p = doc.add_paragraph(style="List Bullet")
-            add_run_with_inline(p, stripped[2:])
+            _set_para_spacing(p, before=0, after=20)
+            pPr = p._p.get_or_add_pPr()
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:left"), "360")
+            ind.set(qn("w:hanging"), "180")
+            pPr.append(ind)
+            _add_run_with_inline(p, content)
 
-        elif re.match(r"^\d+\.\s", stripped):
-            p = doc.add_paragraph(style="List Number")
-            add_run_with_inline(p, re.sub(r"^\d+\.\s", "", stripped))
+        # ── Horizontal rule → thin spacer ────────────────────────────────────
+        elif re.match(r"^---+$", stripped) or re.match(r"^___+$", stripped):
+            p = doc.add_paragraph()
+            _set_para_spacing(p, before=0, after=0)
 
-        elif stripped.startswith("---") or stripped.startswith("___"):
-            doc.add_paragraph("─" * 60)
-
+        # ── Empty line → small vertical gap ──────────────────────────────────
         elif stripped == "":
-            doc.add_paragraph("")
+            # Only add gap if previous wasn't already blank
+            if i > 0 and lines[i - 1].strip() != "":
+                p = doc.add_paragraph()
+                _set_para_spacing(p, before=0, after=40)
 
+        # ── Plain paragraph ───────────────────────────────────────────────────
         else:
             p = doc.add_paragraph()
-            add_run_with_inline(p, stripped)
+            _set_para_spacing(p, before=0, after=20)
+            _add_run_with_inline(p, stripped)
+
+        i += 1
 
     buf = BytesIO()
     doc.save(buf)
@@ -133,8 +198,46 @@ Your workflow:
 1. **Research** — Analyze the job description: extract must-have requirements, keywords, implicit cultural signals, and role archetype.
 2. **Match** — Score each experience from the library against JD requirements using: direct match (40%), transferable skills (30%), adjacent experience (20%), impact alignment (10%).
 3. **Reframe** — Adjust terminology and emphasis to align with the target role without altering facts.
-4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown.
+4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
 5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
+
+## Required Resume Structure (follow exactly)
+
+```
+# Full Name
+Contact line: Email | Phone | LinkedIn | Location
+
+## SUMMARY
+2–3 sentence professional summary targeting this specific role.
+
+## SKILLS
+**Category (e.g. Data & Analytics):** Tool1, Tool2, Tool3
+**Category (e.g. Programming):** Python, SQL, ...
+**Category (e.g. Visualization):** Tableau, Power BI, ...
+**Category (e.g. Other):** ...
+
+## EXPERIENCE
+### Job Title — Company Name | Start – End
+- Achievement bullet using numbers and impact
+- Achievement bullet
+
+### Job Title — Company Name | Start – End
+- Achievement bullet
+
+## EDUCATION
+### Degree — Institution | Year
+- Relevant detail
+
+## CERTIFICATIONS (if any)
+- Certification name
+```
+
+## Skills Section Rules (CRITICAL)
+- Extract EVERY tool, technology, software, and platform mentioned in the job description
+- Include ALL of them in the Skills section, grouped by logical category
+- Do not omit any tool from the JD even if the candidate only has partial exposure
+- Also include tools from the candidate's resume that are relevant
+- Format as bold category label followed by comma-separated tools on same line
 
 Always respond in structured Markdown. Be specific about which experiences you selected and why."""
 
