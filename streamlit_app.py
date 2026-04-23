@@ -285,41 +285,94 @@ def markdown_to_docx(md_text: str, job_description: str = "") -> bytes:
 
 
 def build_system_prompt(resumes_text: str) -> str:
-    return f"""You are an expert resume tailoring assistant. Your core principle is **truth-preserving optimization** — maximize job fit while maintaining factual integrity. Never fabricate experience; intelligently reframe and emphasize relevant aspects.
+    return f"""You are an expert resume tailoring assistant. Your core principle is truth-preserving optimization — maximize job fit while maintaining factual integrity. Never fabricate experience; intelligently reframe and emphasize relevant aspects.
 
 You have access to the user's resume library:
-
 <resume_library>
 {resumes_text}
 </resume_library>
 
-Your workflow:
-1. **Research** — Analyze the job description: extract must-have requirements, keywords, implicit cultural signals, and role archetype.
-2. **Match** — Score each experience from the library against JD requirements using: direct match (40%), transferable skills (30%), adjacent experience (20%), impact alignment (10%).
-3. **Reframe** — Adjust terminology and emphasis to align with the target role without altering facts.
-4. **Generate** — Produce a polished, ATS-friendly tailored resume in Markdown using the exact structure below.
-5. **Gap Report** — List any JD requirements not covered by the existing library with mitigation advice.
+## Resume Generation Rules
 
-## Bullet Point Rules (STRICT — zero tolerance, no exceptions)
-- Maximum **4 bullets per job/experience**
-- Maximum **40 words per bullet** — trim or split anything longer
-- Every bullet must start with a strong action verb
-- **ZERO em dashes (—) or en dashes (–) anywhere in bullets** — rephrase the sentence instead
-- **ZERO semicolons (;) in bullets** — use a comma or split into a new clause
+You will receive a pre-extracted keyword list grouped into 6 buckets. Treat this list as MANDATORY — every keyword in the list that is truthfully applicable to the candidate MUST appear in the resume using the EXACT phrase from the list.
 
-Always respond in structured Markdown. Be specific about which experiences you selected and why."""
+Placement rules per bucket:
+- **Hard Skills** → Skills section + bullets
+- **Tools** → Skills section + bullets
+- **Business Terms** → bullets + summary
+- **Functional Skills** → bullets + summary
+- **Industry Terms** → summary + bullets
+- **Preferred Keywords** → sprinkled across all sections
+
+Do NOT rely on semantic similarity. If the keyword list says "data visualization", write "data visualization" — not "data visuals" or "visualizing data".
+
+## Bullet Point Rules (STRICT — zero tolerance)
+- Maximum 4 bullets per job/experience
+- Maximum 40 words per bullet
+- Every bullet starts with a strong action verb from the JD's vocabulary
+- ZERO em dashes (—) or en dashes (–) in bullets — rephrase instead
+- ZERO semicolons (;) in bullets — use a comma or split into a new clause
+
+Always respond in structured Markdown."""
 
 
-def stream_tailored_resume(client, system_prompt: str, job_description: str, extra_context: str) -> str:
-    user_message = f"""Please tailor my resume for the following job description.
+# ── CALL 1: Extract & bucket JD keywords ────────────────────────────────────
+def stream_extract_keywords(client, job_description: str):
+    system = """You are a precise keyword extraction specialist for ATS-optimised resumes.
 
-**Job Description:**
+Extract every meaningful keyword from the job description and group into exactly these 6 buckets:
+
+1. **Hard Skills** — technical competencies (e.g. statistical analysis, data modeling, A/B testing)
+2. **Tools** — specific software, platforms, languages, frameworks (e.g. Python, Tableau, SQL, Salesforce)
+3. **Business Terms** — business/domain language and role-specific phrases (e.g. "go-to-market", "data integrity", "revenue impact")
+4. **Functional Skills** — cross-functional competencies (e.g. stakeholder management, cross-functional collaboration, project delivery)
+5. **Industry Terms** — industry-specific vocabulary and concepts (e.g. "self-service dashboards", "churn analysis", "ETL pipelines")
+6. **Preferred Keywords** — repeated or emphasised phrases that should appear across the resume (e.g. "data-driven", "actionable insights")
+
+Rules:
+- Capture EXACT phrases as written in the JD — no paraphrasing
+- Flag keywords that appear more than once with ⭐ (highest priority)
+- Include every tool mentioned even if only once
+- Do not skip Business Terms or Industry Terms — these are often missed and matter for ATS
+
+Output format (Markdown, exactly as shown):
+## Extracted Keywords
+
+**Hard Skills:** keyword1, keyword2 ⭐, keyword3
+**Tools:** tool1 ⭐, tool2, tool3
+**Business Terms:** term1, term2 ⭐
+**Functional Skills:** skill1 ⭐, skill2
+**Industry Terms:** term1, term2
+**Preferred Keywords:** phrase1 ⭐, phrase2"""
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=800,
+        system=system,
+        messages=[{"role": "user", "content": f"Extract all keywords from this job description:\n\n{job_description}"}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
+# ── CALL 2: Generate resume anchored to keyword list ────────────────────────
+def stream_tailored_resume(client, system_prompt: str, job_description: str,
+                            keyword_list: str, extra_context: str):
+    user_message = f"""Build a tailored resume using the candidate's experience library and the pre-extracted keyword list below.
+
+## Pre-Extracted Keyword List (MANDATORY — use exact phrases)
+{keyword_list}
+
+## Job Description
 {job_description}
 """
     if extra_context.strip():
-        user_message += f"\n**Additional context about my background:**\n{extra_context}\n"
+        user_message += f"\n## Additional Candidate Context\n{extra_context}\n"
 
-    user_message += "\nPlease produce:\n1. A full tailored resume in Markdown\n2. A brief match analysis (which experiences you selected and confidence scores)\n3. A gap report listing any unaddressed requirements with mitigation tips"
+    user_message += """
+Produce:
+1. The full tailored resume in Markdown
+2. A gap report listing any unaddressed JD requirements with mitigation tips"""
 
     full_response = ""
     with client.messages.stream(
@@ -333,6 +386,41 @@ def stream_tailored_resume(client, system_prompt: str, job_description: str, ext
             yield text
 
     return full_response
+
+
+# ── CALL 3: Exact phrase audit + patch ──────────────────────────────────────
+def stream_keyword_audit(client, resume_md: str, keyword_list: str, job_description: str):
+    system = """You are a strict ATS keyword auditor. Your job is to check a resume against a keyword list and patch any missing exact phrases.
+
+Rules:
+- Compare the resume word-for-word against every keyword in the list
+- If an exact keyword phrase is missing AND is truthfully applicable, insert it naturally
+- Insert into: the closest matching bullet, the summary, or the skills line — whichever fits best
+- Do NOT force keywords that are genuinely not applicable to the candidate
+- Do NOT change any names, dates, companies, job titles, or numbers
+- Do NOT add new bullets — only edit existing text
+- Preserve all bullet rules: max 4 bullets per role, max 40 words, no em dashes, no semicolons
+- Output ONLY the patched resume in Markdown — no commentary"""
+
+    user_message = f"""Audit this resume against the keyword list. Insert any missing exact phrases naturally.
+
+## Keyword List
+{keyword_list}
+
+## Resume to Audit
+{resume_md}
+
+## Job Description (for context)
+{job_description}"""
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=4000,
+        system=system,
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
 
 
 def stream_experience_discovery(client, system_prompt: str, job_description: str, gap_context: str) -> str:
@@ -509,7 +597,7 @@ Produce the final revised resume and an updated match analysis."""
 
 # ── Session state init ────────────────────────────────────────────────────────
 for key, default in {
-    "phase": "input",           # input | tailoring | review | discovery | revision | done | humanizing | humanized
+    "phase": "input",
     "tailored_resume": "",
     "gap_context": "",
     "discovery_questions": "",
@@ -520,7 +608,9 @@ for key, default in {
     "humanized_gap": "",
     "system_prompt": "",
     "job_description": "",
-    "pre_humanize_phase": "done",   # which phase triggered humanize (review or done)
+    "pre_humanize_phase": "done",
+    "keyword_list": "",          # extracted keyword buckets from Call 1
+    "draft_resume": "",          # raw output from Call 2 before audit
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -561,7 +651,8 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Start Over", use_container_width=True):
         for key in ["phase", "tailored_resume", "gap_context", "discovery_questions",
-                    "discovery_answers", "ai_suggested_answers", "final_resume", "system_prompt", "job_description"]:
+                    "discovery_answers", "ai_suggested_answers", "final_resume", "system_prompt",
+                    "job_description", "keyword_list", "draft_resume"]:
             st.session_state[key] = "" if key != "phase" else "input"
         st.rerun()
 
@@ -608,27 +699,58 @@ if st.session_state.phase == "input":
 
 # ── PHASE: TAILORING ──────────────────────────────────────────────────────────
 elif st.session_state.phase == "tailoring":
-    st.subheader("⚡ Phase 1 — Tailoring Your Resume")
-    st.caption("Claude is researching the role, matching your experiences, and generating your tailored resume...")
+    st.subheader("⚡ Building Your Tailored Resume")
 
     client = get_client(api_key)
-    output_placeholder = st.empty()
-    full_text = ""
 
     try:
-        with st.spinner("Generating tailored resume..."):
-            for chunk in stream_tailored_resume(
-                client,
-                st.session_state.system_prompt,
-                st.session_state.job_description,
-                st.session_state.get("extra_context", ""),
-            ):
-                full_text += chunk
-                output_placeholder.markdown(full_text)
+        # ── Call 1: Extract keywords ──────────────────────────────────────────
+        if not st.session_state.keyword_list:
+            st.markdown("**Step 1 of 3 — Extracting JD keywords into buckets...**")
+            placeholder1 = st.empty()
+            kw_text = ""
+            with st.spinner("Analysing job description..."):
+                for chunk in stream_extract_keywords(client, st.session_state.job_description):
+                    kw_text += chunk
+                    placeholder1.markdown(kw_text)
+            st.session_state.keyword_list = kw_text
+            st.rerun()
 
-        st.session_state.tailored_resume = full_text
-        st.session_state.phase = "review"
-        st.rerun()
+        # ── Call 2: Generate resume anchored to keywords ──────────────────────
+        if st.session_state.keyword_list and not st.session_state.draft_resume:
+            st.markdown("**Step 2 of 3 — Building resume from keyword-anchored experience matching...**")
+            placeholder2 = st.empty()
+            draft_text = ""
+            with st.spinner("Generating resume..."):
+                for chunk in stream_tailored_resume(
+                    client,
+                    st.session_state.system_prompt,
+                    st.session_state.job_description,
+                    st.session_state.keyword_list,
+                    st.session_state.get("extra_context", ""),
+                ):
+                    draft_text += chunk
+                    placeholder2.markdown(draft_text)
+            st.session_state.draft_resume = draft_text
+            st.rerun()
+
+        # ── Call 3: Keyword audit + patch ─────────────────────────────────────
+        if st.session_state.draft_resume and not st.session_state.tailored_resume:
+            st.markdown("**Step 3 of 3 — Running exact keyword audit and patching gaps...**")
+            placeholder3 = st.empty()
+            final_text = ""
+            with st.spinner("Auditing keyword coverage..."):
+                for chunk in stream_keyword_audit(
+                    client,
+                    st.session_state.draft_resume,
+                    st.session_state.keyword_list,
+                    st.session_state.job_description,
+                ):
+                    final_text += chunk
+                    placeholder3.markdown(final_text)
+            st.session_state.tailored_resume = final_text
+            st.session_state.phase = "review"
+            st.rerun()
 
     except anthropic.AuthenticationError:
         st.error("Invalid API key. Please check your Anthropic API key in the sidebar.")
