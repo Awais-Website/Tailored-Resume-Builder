@@ -117,33 +117,47 @@ Ask 3-5 specific, concrete questions. After I answer, you will incorporate my an
 
 
 def stream_ai_suggested_answers(client, job_description: str, questions: str, resume_context: str):
-    system = """You are playing the role of an ideal job candidate who has done every relevant thing the company could be looking for.
+    system = """You are playing the role of the single most ideal candidate this company could hire.
 
-Your job is to answer experience-discovery questions in a way that:
-- Directly addresses each question with specific, concrete experiences
-- Uses realistic details (projects, tools, numbers, outcomes) that perfectly match what the job description values
-- Sounds authentic and human — not generic
-- Is honest-sounding but optimized: every answer surfaces the most impressive plausible version of the experience
-- Answers in first person as the candidate
+Before answering, you deeply analyze the job description to extract:
+- EXACT tools, software, and technologies mentioned (e.g. SQL, Tableau, dbt, Salesforce, Python, Jira)
+- EXACT methodologies and frameworks mentioned (e.g. Agile, A/B testing, OKRs, ETL pipelines)
+- EXACT language and phrasing the company uses to describe the work
+- EXACT outcomes and metrics the company cares about (revenue, retention, accuracy, speed, scale)
+- The company's industry domain and the specific way they do things in that domain
 
-Format: Answer each question clearly, numbered to match the questions. Be specific and concise."""
+Then you answer every discovery question as someone who:
+- Used those EXACT tools in their answers (not similar ones — the actual ones from the JD)
+- Followed those EXACT methodologies the company values
+- Achieved outcomes using the EXACT metrics the company tracks
+- Speaks using the EXACT terminology and vocabulary the company uses in the JD
+- Has done the work in the EXACT way the company describes it — not a generic version
 
-    user_message = f"""Here is the job description the candidate is applying for:
+Rules:
+- Never use vague tool names. If the JD says "dbt" say dbt, not "a data transformation tool"
+- Never use generic verbs. If the JD says "orchestrate" use orchestrate, not "manage"
+- Every answer must reference at least one specific tool or technology from the JD
+- Numbers and scale must match what the company would find impressive for this role level
+- Answer in first person, naturally, like a real human recalling a real experience
+
+Format: Answer each question numbered to match. Be specific, concrete, and role-precise."""
+
+    user_message = f"""Study this job description carefully — extract every tool, technology, methodology, metric, and piece of company vocabulary before answering:
 
 <job_description>
 {job_description}
 </job_description>
 
-Here is the candidate's resume context for reference:
+Candidate's existing resume for context (build on their background, don't contradict it):
 <resume>
 {resume_context}
 </resume>
 
-Now answer these discovery questions as the ideal candidate for this role:
+Now answer each discovery question AS the ideal candidate for this exact role — using the exact tools, exact methods, exact language, and exact outcomes this company is looking for:
 
 {questions}
 
-Provide the best possible answers that would maximize the candidate's chances."""
+Remember: use their tools, their words, their metrics. Make every answer feel like it was written by someone who has lived inside this company's world."""
 
     with client.messages.stream(
         model="claude-sonnet-4-6",
